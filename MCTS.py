@@ -89,7 +89,8 @@ class MCTS:
             target.Children = t.Children
             t.Children = None
             for c in target.Children:
-                c.Parent = target
+                if c is not None:
+                    c.Parent = target
             del continuedTrees[0]
 
         for i in range(len(target.Children)):
@@ -97,7 +98,6 @@ class MCTS:
                 continue
             self._mergeAll(target.Children[i], [t.Children[i] for t in continuedTrees])
 
-        
         return
 
     def SelectAction(self, root, testing = False):
