@@ -27,7 +27,7 @@ class BoardState():
                     s += '   '
                 if j < array.shape[1] - 1:
                     s += '|'
-            s += ']\n'
+            s += ']\n\n'
 
         return s
 
