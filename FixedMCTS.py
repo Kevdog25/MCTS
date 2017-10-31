@@ -4,9 +4,9 @@ import numpy as np
 
 class FixedMCTS(MCTS):
     '''An implementation of Monte Carlo Tree Search that only aggregates statistics up to a fixed depth.'''
-    def __init__(self, maxDepth, timeLimit, explorationRate, threads = 1, **kwargs):
+    def __init__(self, maxDepth, explorationRate, threads = 1, timeLimit = None, playLimit = None, **kwargs):
         self.MaxDepth = maxDepth
-        return super().__init__(timeLimit, explorationRate, threads, **kwargs)
+        return super().__init__(explorationRate, timeLimit, playLimit, threads, **kwargs)
     
     def RunSimulation(self, root):
         node = root
@@ -25,7 +25,8 @@ class FixedMCTS(MCTS):
 
         assert i > 0, 'When requesting a move from the MCTS, there is at least one legal option.'
 
-        self.BackProp(node, self.SampleValue(node.State, previousPlayer))
+        val, player = self.SampleValue(node.State, previousPlayer)
+        self.BackProp(node, val, player)
         return
     
     def SampleValue(self, state, player):
@@ -37,7 +38,7 @@ class FixedMCTS(MCTS):
             action = np.random.choice(actions)
             rolloutState = self.ApplyAction(rolloutState, action)
             winner = self.Winner(rolloutState, action)
-        return 0.5 if winner == 0 else int(winner == player)
+        return 0.5 if winner == 0 else 1, winner
 
     def GetPriors(self, state):
         return np.array([1 for v in self.LegalActions(state)])

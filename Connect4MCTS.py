@@ -41,11 +41,12 @@ class BoardState():
 
 class Connect4MCTS(MCTS_base):
 
-    def __init__(self, maxDepth, timeLimit, explorationRate, width = 7, height = 6, inARow = 4, threads = 1, **kwargs):
+    def __init__(self, maxDepth, explorationRate, width = 7, height = 6, inARow = 4, threads = 1, **kwargs):
         self.Width = width
         self.Height = height
         self.InARow = inARow
-        return super().__init__(maxDepth, timeLimit, explorationRate, threads, **kwargs)
+        self.Dirs = [(0,1),(1,1),(1,0),(1,-1)]
+        return super().__init__(maxDepth, explorationRate, threads, **kwargs)
 
     def LegalActions(self, state):
         return np.array([1 if state.Board[col, self.Height-1] == 0 else 0 for col in range(self.Width)])
@@ -93,9 +94,8 @@ class Connect4MCTS(MCTS_base):
         return True
 
     def _checkVictory(self, board, i, j):
-        dirs = [(0,1),(1,1),(1,0),(1,-1)] # lol. dirs are cols x rows, while we loop the other way.
         p = board[i,j]
-        for dir in dirs:
+        for dir in self.Dirs:
             inARow = 0
             r = 0
             while r*dir[0] + i < self.Width and r*dir[1] + j < self.Height and r*dir[1] + j >= 0 and board[r*dir[0] + i, r*dir[1] + j] == p:
@@ -110,13 +110,13 @@ class Connect4MCTS(MCTS_base):
         return None
 
 
-def playGame(ai, timePerMove = None, playHuman = False):
+def playGame(ai, playHuman = False, timePerMove = None, playsPerMove = None):
     board = ai.NewGame()
     print(board)
     print()
     ai.ResetRoot()
     while ai.Winner(board) is None:
-        board = ai.FindMove(board, timePerMove)
+        board = ai.FindMove(board, timePerMove, playsPerMove)
         print(board)
         print('{0}'.format(ai.Root.ChildWinRates()))
         print('Number of simulations: {0}'.format(ai.Root.Plays))
@@ -134,8 +134,8 @@ def playGame(ai, timePerMove = None, playHuman = False):
 
 if __name__=='__main__':
     np.set_printoptions(formatter={'float_kind': lambda x : "%.1f" % x})
-    ai = Connect4MCTS(50, 1, 1, threads = 1)
-    playGame(ai, 5)
+    ai = Connect4MCTS(100, 1, threads = 3)
+    playGame(ai, False, None, 1000)
 
 
 
