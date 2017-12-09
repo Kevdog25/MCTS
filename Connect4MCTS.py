@@ -125,17 +125,33 @@ def playGame(ai, playHuman = False, timePerMove = None, playsPerMove = None):
         if playHuman:
             col = int(input('Select a column: '))
             board = ai.ApplyAction(board,col)
-            print('{0}'.format(ai.Root.ChildWinRates()))
-            print('Number of simulations: {0}'.format(ai.Root.Plays))
             print()
             ai.MoveRoot([board])
 
     return
 
+
+def addRootDist(root, plays):
+    plays.append(root.Plays)
+    if root.Children is not None:
+        for c in root.Children:
+            if c is not None:
+                addRootDist(c, plays)
+    return
+
 if __name__=='__main__':
     np.set_printoptions(formatter={'float_kind': lambda x : "%.1f" % x})
-    ai = Connect4MCTS(100, 1, threads = 3)
-    playGame(ai, False, None, 1000)
+    ai = Connect4MCTS(10, 1, threads = 3)
+    playGame(ai, False, None, 100)
+    '''
+    ai.ResetRoot()
+    plays = []
+    addRootDist(ai.Root, plays)
+    with open('data.txt','w') as f:
+        for v in plays:
+            f.write('{0};'.format(v))
+            '''
+
 
 
 
