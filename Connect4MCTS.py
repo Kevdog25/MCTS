@@ -7,7 +7,6 @@ class BoardState():
         self.Player = player
         return super().__init__(**kwargs)
 
-
     def Copy(self):
         copy = BoardState(self.Board.shape, self.Player)
         copy.Board = np.copy(self.Board)
@@ -48,6 +47,8 @@ class Connect4MCTS(MCTS_base):
         self.Dirs = [(0,1),(1,1),(1,0),(1,-1)]
         return super().__init__(maxDepth, explorationRate, threads, **kwargs)
 
+
+    # Overriding from MCTS
     def LegalActions(self, state):
         return np.array([1 if state.Board[col, self.Height-1] == 0 else 0 for col in range(self.Width)])
     
@@ -69,11 +70,11 @@ class Connect4MCTS(MCTS_base):
         if prevAction is not None:
             for j in reversed(range(self.Height)):
                 if board[prevAction, j] != 0:
-                    win = self._checkVictory(board, prevAction, j)
+                    win = self.__checkVictory(board, prevAction, j)
                     if win is not None:
                         return win
 
-        if self._isDraw(board):
+        if self.__isDraw(board):
             return 0
 
         if prevAction is None:
@@ -81,19 +82,21 @@ class Connect4MCTS(MCTS_base):
                 for j in range(self.Height):
                     if board[i,j] == 0:
                         continue
-                    win = self._checkVictory(board, i, j)
+                    win = self.__checkVictory(board, i, j)
                     if win is not None: 
                         return win
 
         return None
-    
-    def _isDraw(self,board):
+
+
+    # Private Functions
+    def __isDraw(self,board):
         for i in range(self.Width):
             if board[i, self.Height-1] == 0:
                 return False
         return True
 
-    def _checkVictory(self, board, i, j):
+    def __checkVictory(self, board, i, j):
         p = board[i,j]
         for dir in self.Dirs:
             inARow = 0
@@ -110,47 +113,6 @@ class Connect4MCTS(MCTS_base):
         return None
 
 
-def playGame(ai, playHuman = False, timePerMove = None, playsPerMove = None):
-    board = ai.NewGame()
-    print(board)
-    print()
-    ai.ResetRoot()
-    while ai.Winner(board) is None:
-        board = ai.FindMove(board, timePerMove, playsPerMove)
-        print(board)
-        print('{0}'.format(ai.Root.ChildWinRates()))
-        print('Number of simulations: {0}'.format(ai.Root.Plays))
-        print()
-        ai.MoveRoot([board])
-        if playHuman:
-            col = int(input('Select a column: '))
-            board = ai.ApplyAction(board,col)
-            print()
-            ai.MoveRoot([board])
-
-    return
-
-
-def addRootDist(root, plays):
-    plays.append(root.Plays)
-    if root.Children is not None:
-        for c in root.Children:
-            if c is not None:
-                addRootDist(c, plays)
-    return
-
-if __name__=='__main__':
-    np.set_printoptions(formatter={'float_kind': lambda x : "%.1f" % x})
-    ai = Connect4MCTS(10, 1, threads = 3)
-    playGame(ai, False, None, 100)
-    '''
-    ai.ResetRoot()
-    plays = []
-    addRootDist(ai.Root, plays)
-    with open('data.txt','w') as f:
-        for v in plays:
-            f.write('{0};'.format(v))
-            '''
 
 
 

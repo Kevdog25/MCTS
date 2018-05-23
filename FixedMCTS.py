@@ -3,15 +3,16 @@ from MCTS import Node
 import numpy as np
 
 class FixedMCTS(MCTS):
-    '''An implementation of Monte Carlo Tree Search that only aggregates statistics up to a fixed depth.'''
+    """An implementation of Monte Carlo Tree Search that only aggregates statistics up to a fixed depth."""
     def __init__(self, maxDepth, explorationRate, threads = 1, timeLimit = None, playLimit = None, **kwargs):
         self.MaxDepth = maxDepth
         return super().__init__(explorationRate, timeLimit, playLimit, threads, **kwargs)
     
+    # Overriding from MCTS
     def RunSimulation(self, root):
         node = root
-        depth = 0
         lastAction = None
+        previousPlayer = None
         for i in range(self.MaxDepth):
             if node.Children is None:
                 if self.Winner(node.State, lastAction) is not None:
@@ -30,7 +31,7 @@ class FixedMCTS(MCTS):
         return
     
     def SampleValue(self, state, player):
-        '''Samples the value of the state for the specified player.'''
+        """Samples the value of the state for the specified player."""
         rolloutState = state
         winner = self.Winner(rolloutState)
         while winner is None:
@@ -41,6 +42,6 @@ class FixedMCTS(MCTS):
         return 0.5 if winner == 0 else 1, winner
 
     def GetPriors(self, state):
-        return np.array([1 for v in self.LegalActions(state)])
+        return np.array([1] * len(self.LegalActions(state)))
 
 

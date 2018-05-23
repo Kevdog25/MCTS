@@ -2,6 +2,7 @@ import numpy as np
 import time
 import multiprocessing as mp
 
+
 def softMax(x):
     exps = np.exp(x)
     return exps / np.sum(exps)
@@ -16,7 +17,7 @@ class Node:
         self.Children = None
         self.Parent = None
         # Use the legal actions mask to ignore priors that don't make sense.
-        self.Priors = np.multiply(priors, legalActions) 
+        self.Priors = np.multiply(priors, legalActions)
 
         # Do some caching here. This is to reduce the strain on the CPU memory cache compared to receating a new array on every access.
         self._childWinRates = np.zeros(len(legalActions))
@@ -45,8 +46,8 @@ class Node:
         return self._childPlays
 
 class MCTS:
-    '''This is a base class for Monte Carlo Tree Search algorithms. It outlines all the necessary operations for the core algorithm. 
-        Most operations will need to be overriden to avoid a NotImplemenetedError.'''
+    """This is a base class for Monte Carlo Tree Search algorithms. It outlines all the necessary operations for the core algorithm.
+        Most operations will need to be overriden to avoid a NotImplemenetedError."""
     def __init__(self, explorationRate, timeLimit = None, playLimit = None, threads = 1, **kwargs):
         self.TimeLimit = timeLimit
         self.PlayLimit = playLimit
@@ -58,7 +59,7 @@ class MCTS:
         return super().__init__(**kwargs)
 
     def FindMove(self, state, moveTime = None, playLimit = None):
-        '''Given a game state, this will use a Monte Carlo Tree Search algorithm to pick the best next move.'''
+        """Given a game state, this will use a Monte Carlo Tree Search algorithm to pick the best next move."""
         endTime = None
         if moveTime is None:
             moveTime = self.TimeLimit
@@ -69,6 +70,7 @@ class MCTS:
 
         if self.Root is None:
             self.Root = Node(state, self.LegalActions(state), self.GetPriors(state))
+
         assert self.Root.State == state, 'MCTS has been primed for the correct input state.'
         assert endTime is not None or playLimit is not None, 'The MCTS algorithm has a cutoff point.'
         
@@ -125,8 +127,8 @@ class MCTS:
         return
 
     def SelectAction(self, root, testing = False):
-        '''Selects a child of the root using an upper confidence interval. If you are not exploring, setting the testing flag will 
-            instead choose the one with the highest expected payouot - ignoring the exploration/regret factor.'''
+        """Selects a child of the root using an upper confidence interval. If you are not exploring, setting the testing flag will
+            instead choose the one with the highest expected payout - ignoring the exploration/regret factor."""
         assert root.Children is not None, 'The node has children to select.'
 
         upperConfidence = root.ChildWinRates()
@@ -136,7 +138,7 @@ class MCTS:
         return np.argmax(upperConfidence + root.LegalActions)
 
     def AddChildren(self, node):
-        '''Expands the node and adds children, actions and priors.'''
+        """Expands the node and adds children, actions and priors."""
         l = len(node.LegalActions)
         node.Children = [None] * l
         for i in range(l):
@@ -158,7 +160,7 @@ class MCTS:
             self.Root = None
             return
         for child in self.Root.Children:
-            if child == None:
+            if child is None:
                 continue
             if child.State == state:
                 self.Root = child
@@ -187,6 +189,7 @@ class MCTS:
             self.BackProp(leaf.Parent, stateValue, playerForValue)
         return
     
+    '''Algorithm implementation functions'''
     def RunSimulation(self, root):
         raise NotImplementedError
     
