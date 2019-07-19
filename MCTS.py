@@ -36,7 +36,7 @@ class Node:
 
     def ChildProbability(self):
         rates = np.array(self.ChildWinRates())
-        
+
         return softMax(rates)
 
     def ChildPlays(self):
@@ -45,20 +45,22 @@ class Node:
                 self._childPlays[i] = self.Children[i].Plays
         return self._childPlays
 
+
 class MCTS:
     """This is a base class for Monte Carlo Tree Search algorithms. It outlines all the necessary operations for the core algorithm.
         Most operations will need to be overriden to avoid a NotImplemenetedError."""
-    def __init__(self, explorationRate, timeLimit = None, playLimit = None, threads = 1, **kwargs):
+
+    def __init__(self, explorationRate, timeLimit=None, playLimit=None, threads=1, **kwargs):
         self.TimeLimit = timeLimit
         self.PlayLimit = playLimit
         self.ExplorationRate = explorationRate
         self.Root = None
         self.Threads = threads
         if self.Threads > 1:
-            self.Pool = mp.Pool(processes = self.Threads)
+            self.Pool = mp.Pool(processes=self.Threads)
         return super().__init__(**kwargs)
 
-    def FindMove(self, state, moveTime = None, playLimit = None):
+    def FindMove(self, state, moveTime=None, playLimit=None):
         """Given a game state, this will use a Monte Carlo Tree Search algorithm to pick the best next move."""
         endTime = None
         if moveTime is None:
@@ -69,11 +71,12 @@ class MCTS:
             playLimit = self.PlayLimit
 
         if self.Root is None:
-            self.Root = Node(state, self.LegalActions(state), self.GetPriors(state))
+            self.Root = Node(state, self.LegalActions(
+                state), self.GetPriors(state))
 
         assert self.Root.State == state, 'MCTS has been primed for the correct input state.'
         assert endTime is not None or playLimit is not None, 'The MCTS algorithm has a cutoff point.'
-        
+
         if self.Threads == 1:
             self._runMCTS(self.Root, endTime, playLimit)
         elif self.Threads > 1:
@@ -81,12 +84,13 @@ class MCTS:
 
         return self.ApplyAction(state, self.SelectAction(self.Root, True))
 
-    def _runAsynch(self, state, endTime = None, nPlays = None):
+    def _runAsynch(self, state, endTime=None, nPlays=None):
         roots = []
         results = []
         for i in range(self.Threads):
             root = Node(state, self.LegalActions(state), self.GetPriors(state))
-            results.append(self.Pool.apply_async(self._runMCTS, (root, endTime, nPlays)))
+            results.append(self.Pool.apply_async(
+                self._runMCTS, (root, endTime, nPlays)))
 
         for r in results:
             roots.append(r.get())
@@ -94,19 +98,20 @@ class MCTS:
         self._mergeAll(self.Root, roots)
         return
 
-    def _runMCTS(self, root, endTime = None, nPlays = None):
+    def _runMCTS(self, root, endTime=None, nPlays=None):
         while (endTime is None or time.time() < endTime) and (nPlays is None or root.Plays < nPlays):
             self.RunSimulation(root)
         for c in root.Children:
             if c is not None:
-                c.Children = None # Kill the children. We only want to pass back the immediate results.
+                # Kill the children. We only want to pass back the immediate results.
+                c.Children = None
         return root
 
     def _mergeAll(self, target, trees):
         for t in trees:
             target.Plays += t.Plays
             target.Value += t.Value
-        
+
         continuedTrees = [t for t in trees if t.Children is not None]
         if len(continuedTrees) == 0:
             return
@@ -122,18 +127,20 @@ class MCTS:
         for i in range(len(target.Children)):
             if target.Children[i] is None:
                 continue
-            self._mergeAll(target.Children[i], [t.Children[i] for t in continuedTrees])
+            self._mergeAll(target.Children[i], [
+                           t.Children[i] for t in continuedTrees])
 
         return
 
-    def SelectAction(self, root, testing = False):
+    def SelectAction(self, root, testing=False):
         """Selects a child of the root using an upper confidence interval. If you are not exploring, setting the testing flag will
             instead choose the one with the highest expected payout - ignoring the exploration/regret factor."""
         assert root.Children is not None, 'The node has children to select.'
 
         upperConfidence = root.ChildWinRates()
         if not testing:
-            upperConfidence += self.ExplorationRate * root.Priors * np.sqrt(root.Plays) / (1.0 + root.ChildPlays())
+            upperConfidence += self.ExplorationRate * root.Priors * \
+                np.sqrt(root.Plays) / (1.0 + root.ChildPlays())
 
         return np.argmax(upperConfidence + root.LegalActions)
 
@@ -144,12 +151,13 @@ class MCTS:
         for i in range(l):
             if node.LegalActions[i] == 1:
                 s = self.ApplyAction(node.State, i)
-                node.Children[i] = Node(s, self.LegalActions(s), self.GetPriors(s))
+                node.Children[i] = Node(
+                    s, self.LegalActions(s), self.GetPriors(s))
                 node.Children[i].Parent = node
         return
 
     def MoveRoot(self, states):
-        for s in states: 
+        for s in states:
             self._moveRoot(s)
         return
 
@@ -188,11 +196,12 @@ class MCTS:
 
             self.BackProp(leaf.Parent, stateValue, playerForValue)
         return
-    
+
     '''Algorithm implementation functions'''
+
     def RunSimulation(self, root):
         raise NotImplementedError
-    
+
     def SampleValue(self, state, player):
         raise NotImplementedError
 
@@ -200,21 +209,22 @@ class MCTS:
         raise NotImplementedError
 
     '''Game implementation functions.'''
+
     def ApplyAction(self, state, action):
         raise NotImplementedError
 
     def LegalActions(self, state):
         raise NotImplementedError
 
-    def Winner(self, state, lastAction = None):
+    def Winner(self, state, lastAction=None):
         raise NotImplementedError
 
-    
     def __getstate__(self):
         self_dict = self.__dict__.copy()
         del self_dict['Pool']
         return self_dict
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     mcts = MCTS(1, np.sqrt(2))
     print(mcts.TimeLimit)

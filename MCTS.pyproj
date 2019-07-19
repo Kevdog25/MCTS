@@ -26,9 +26,6 @@
     <Compile Include="Connect4MCTS.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Cyl.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="FixedMCTS.py">
       <SubType>Code</SubType>
     </Compile>

@@ -33,6 +33,6 @@ def addRootDist(root, plays):
 
 if __name__=='__main__':
     np.set_printoptions(formatter={'float_kind': lambda x : "%.1f" % x})
-    ai = AI(10, 1, threads = 3)
-    playGame(ai, False, None, 100)
+    ai = AI(10, 1, threads = 1)
+    playGame(ai, True, None, 100)
 
