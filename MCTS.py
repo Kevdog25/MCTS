@@ -1,167 +1,267 @@
 import numpy as np
-import time
+from time import time
 import multiprocessing as mp
+from GameState import GameState
 
 
-def softMax(x):
-    exps = np.exp(x)
-    return exps / np.sum(exps)
+class Node(object):
+    """ Base class for storing game state information in tree searches.
 
+        This is the abtract tree node class that is used to cache/organize game
+        information during the search.
 
-class Node:
+        Attributes:
+            State: A GameState object holding the Node's state representation.
+            Value: A float holding the Node's state valuation.
+            Plays: A counter holding the number of times the Node has been used.
+            LegalActions: An int holding the number of legal actions for the
+                Node.
+            Children: A list of Nodes holding all legal states for the Node.
+            Parent: A Node object representing the Node's parent.
+            Priors: A numpy array of size [num_legal_actions] that holds the
+                Node's prior probabilities.  At instantiation, the provided
+                prior is filtered on only legal moves.
+
+            _childWinRates: A numpy array of size [num_legal_actions] used for
+                storing the win rates of the Node's children in MCTS.
+            _childPlays: A numpy array of size [num_legal_actions] used for
+                storing the play counts of the Node's children in MCTS.
+    """
+
     def __init__(self, state, legalActions, priors, **kwargs):
         self.State = state
         self.Value = 0
         self.Plays = 0
-        self.LegalActions = legalActions
+        self.LegalActions = np.array(legalActions)
         self.Children = None
         self.Parent = None
-        # Use the legal actions mask to ignore priors that don't make sense.
         self.Priors = np.multiply(priors, legalActions)
 
-        # Do some caching here. This is to reduce the strain on the CPU memory cache compared to receating a new array on every access.
         self._childWinRates = np.zeros(len(legalActions))
-        self._childPlays = np.zeros(len(legalActions))
-
-        return super().__init__(**kwargs)
+        self._childPlays = np.zeros(len(legalActions), dtype=np.float)
 
     def WinRate(self):
-        return self.Value/self.Plays if self.Plays > 0 else 0.
+        """ Samples the win rate of the Node after MCTS.
+
+            This is a simple API which provides the win rate of the Node after
+            applying MCTS.
+
+            Returns:
+                A float representing the win rate for the Node. If no plays have
+                been applied to this Node, the default value of 0 is returned.
+        """
+        return self.Value/self.Plays if self.Plays > 0 else 0
+
+    def ChildProbability(self):
+        """ Samples the probabilities of sampling each child Node.
+
+            Samples the play rate for each of the Node's children Node objects.
+            If no children have been sampled in MCTS, this returns zeros.
+
+            Returns:
+                A numpy array representing the play rate for each of the Node's
+                children. Defaults to an array of zeros if no children have been
+                sampled.
+        """
+        allPlays = sum(self.ChildPlays())
+        zeroProbs = np.zeros((len(self.ChildPlays())), dtype=np.float)
+        return self.ChildPlays() / allPlays if allPlays > 0 else zeroProbs
 
     def ChildWinRates(self):
+        """ Samples the win rate of each child Node object.
+
+            Samples the win rates for each of the Node's children. Not helpful
+            if none of the children have been evaluated in MCTS.
+
+            Returns:
+                A numpy array representing the win rate for each of the Node's
+                children.
+        """
         for i in range(len(self.Children)):
             if self.Children[i] is not None:
                 self._childWinRates[i] = self.Children[i].WinRate()
         return self._childWinRates
 
-    def ChildProbability(self):
-        rates = np.array(self.ChildWinRates())
-
-        return softMax(rates)
-
     def ChildPlays(self):
+        """ Samples the play rate of each child Node object.
+
+            Samples the play rates for each of the Node's children. Not helpful
+            if none of the children have been evaluated in MCTS.
+
+            Returns:
+                A numpy array representing the play rate for each of the Node's
+                children.
+        """
         for i in range(len(self.Children)):
             if self.Children[i] is not None:
                 self._childPlays[i] = self.Children[i].Plays
         return self._childPlays
 
 
-class MCTS:
-    """This is a base class for Monte Carlo Tree Search algorithms. It outlines all the necessary operations for the core algorithm.
-        Most operations will need to be overriden to avoid a NotImplemenetedError."""
+class MCTS(object):
+    """ Base class for Monte Carlo Tree Search algorithms.
 
-    def __init__(self, explorationRate, timeLimit=None, playLimit=None, threads=1, **kwargs):
+        Outlines all the necessary operations for the core MCTS algorithm.
+        _findLeaf() will need to be overriden to avoid a NotImplemenetedError.
+
+        Attributes:
+            TimeLimit: The default max move time in seconds.
+            PlayLimit: The default number of positions to evaluate per move.
+            ExplorationRate: The exploration parameter for MCTS.
+            Root: The Node object representing the root of the MCTS.
+    """
+
+    def __init__(self, explorationRate, timeLimit=None, playLimit=None,
+                 **kwargs):
+
         self.TimeLimit = timeLimit
         self.PlayLimit = playLimit
         self.ExplorationRate = explorationRate
         self.Root = None
-        self.Threads = threads
-        if self.Threads > 1:
-            self.Pool = mp.Pool(processes=self.Threads)
-        return super().__init__(**kwargs)
 
-    def FindMove(self, state, moveTime=None, playLimit=None):
-        """Given a game state, this will use a Monte Carlo Tree Search algorithm to pick the best next move."""
+    def AddChildren(self, node):
+        """ Expands a node and adds children, actions and priors.
+
+            Given a node, MCTS will evaluate the node's children, if they exist.
+            The evaluation and prior policy are supplied in the creation of the
+            child Node object.
+
+            Args:
+                node: A Node object to expand.
+        """
+        numLegalMoves = len(node.LegalActions)
+        node.Children = [None] * numLegalMoves
+        for actionIndex in range(numLegalMoves):
+            if node.LegalActions[actionIndex] == 1:
+                s = self._applyAction(node.State, actionIndex)
+                node.Children[actionIndex] = Node(s, s.LegalActions(),
+                                                  self.GetPriors(s))
+                node.Children[actionIndex].Parent = node
+
+    def DropRoot(self):
+        """ Resets self.Root to None
+        """
+        self.Root = None
+
+    def FindMove(self, state, temp=0.1, moveTime=None, playLimit=None):
+        """ Finds the optimal move in a position.
+
+            Given a game state, this will use a Monte Carlo Tree Search
+            algorithm to pick the best next move.
+
+            Args:
+                state: A GameState object which the function will evaluate.
+                temp: A float determining the temperature to apply in move
+                    selection.
+                moveTime: An optional float determining the allowed search time.
+                playLimit: An optional float determining the allowed number of
+                    positions to evaluate.
+
+            Returns:
+                A tuple providing, in order...
+                    - The board state after applying the selected move
+                    - The decided value of input state
+                    - The probabilities of choosing each of the children
+
+            Raises:
+                TypeError: state was not an object of type GameState.
+                ValueError: The function was not able to determine a stop time.
+        """
+        if not isinstance(state, GameState):
+            raise TypeError('State not of type GameState')
+
         endTime = None
         if moveTime is None:
             moveTime = self.TimeLimit
         if moveTime is not None:
-            endTime = time.time() + moveTime
+            endTime = time() + moveTime
         if playLimit is None:
             playLimit = self.PlayLimit
 
+        if endTime is None and playLimit is None:
+            raise ValueError('Not enough information to decide a stop time.')
+
         if self.Root is None:
-            self.Root = Node(state, self.LegalActions(
-                state), self.GetPriors(state))
+            self.Root = Node(state, state.LegalActions(),
+                             self.GetPriors(state))
+        assert self.Root.State == state, 'Primed for the correct input state.'
 
-        assert self.Root.State == state, 'MCTS has been primed for the correct input state.'
-        assert endTime is not None or playLimit is not None, 'The MCTS algorithm has a cutoff point.'
+        self._runMCTS(temp, endTime, playLimit)
+        action = self._selectAction(self.Root, temp, exploring=False)
 
-        if self.Threads == 1:
-            self._runMCTS(self.Root, endTime, playLimit)
-        elif self.Threads > 1:
-            self._runAsynch(state, endTime, playLimit)
+        return (self._applyAction(state, action), self.Root.WinRate(),
+                self.Root.ChildProbability())
 
-        return self.ApplyAction(state, self.SelectAction(self.Root, True))
+    def MoveRoot(self, state):
+        """ This is the public API of MCTS._moveRoot.
 
-    def _runAsynch(self, state, endTime=None, nPlays=None):
-        roots = []
-        results = []
-        for i in range(self.Threads):
-            root = Node(state, self.LegalActions(state), self.GetPriors(state))
-            results.append(self.Pool.apply_async(
-                self._runMCTS, (root, endTime, nPlays)))
+            Move the root of the tree to the provided state. Use this to update
+            the root so that tree integrity can be maintained between moves if
+            necessary. Does nothing if Root is None, for example after running
+            DropRoot().
 
-        for r in results:
-            roots.append(r.get())
+            Args:
+                state: A GameState object which self.Root should be updated to.
+        """
+        self._moveRoot(state)
 
-        self._mergeAll(self.Root, roots)
-        return
+    def ResetRoot(self):
+        """ Set self.Root to the appropriate initial state.
 
-    def _runMCTS(self, root, endTime=None, nPlays=None):
-        while (endTime is None or time.time() < endTime) and (nPlays is None or root.Plays < nPlays):
-            self.RunSimulation(root)
-        for c in root.Children:
-            if c is not None:
-                # Kill the children. We only want to pass back the immediate results.
-                c.Children = None
-        return root
-
-    def _mergeAll(self, target, trees):
-        for t in trees:
-            target.Plays += t.Plays
-            target.Value += t.Value
-
-        continuedTrees = [t for t in trees if t.Children is not None]
-        if len(continuedTrees) == 0:
+            Reset the state of self.Root to an appropriate initial state.  If
+            self.Root was already None, then there is nothing to do, and it will
+            remain None.  Otherwise, ResetRoot will apply an iterative backup to
+            self.Root until its parent is None.
+        """
+        if self.Root is None:
             return
-        if target.Children is None:
-            t = continuedTrees[0]
-            target.Children = t.Children
-            t.Children = None
-            for c in target.Children:
-                if c is not None:
-                    c.Parent = target
-            del continuedTrees[0]
+        while self.Root.Parent is not None:
+            self.Root = self.Root.Parent
 
-        for i in range(len(target.Children)):
-            if target.Children[i] is None:
-                continue
-            self._mergeAll(target.Children[i], [
-                           t.Children[i] for t in continuedTrees])
+    def _applyAction(self, state, action):
+        """ Applies an action to a provided state.
 
-        return
+            Args:
+                state: A GameState object which needs to be updated.
+                action: An int which indicates the action to apply to state.
+        """
+        s = state.Copy()
+        s.ApplyAction(action)
+        return s
 
-    def SelectAction(self, root, testing=False):
-        """Selects a child of the root using an upper confidence interval. If you are not exploring, setting the testing flag will
-            instead choose the one with the highest expected payout - ignoring the exploration/regret factor."""
-        assert root.Children is not None, 'The node has children to select.'
+    def _backProp(self, leaf, stateValue, playerForValue):
+        """ Backs up a value from a leaf through to self.Root.
 
-        upperConfidence = root.ChildWinRates()
-        if not testing:
-            upperConfidence += self.ExplorationRate * root.Priors * \
-                np.sqrt(root.Plays) / (1.0 + root.ChildPlays())
+            Given a leaf node and a value, this function will back-propogate the
+            value to its parent node, and propogate that all the way through the
+            tree to its root, self.Root
 
-        return np.argmax(upperConfidence + root.LegalActions)
+            Args:
+                leaf: A Node object which is the leaf of the current tree to
+                    apply back-propogation to.
+                stateValue: The MCTS-created evaluation to back-propogate.
+                playerForValue: The player which stateValue applies to.
+        """
+        leaf.Plays += 1
+        if leaf.Parent is not None:
+            if leaf.Parent.State.Player == playerForValue:
+                leaf.Value += stateValue
+            else:
+                leaf.Value += 1 - stateValue
 
-    def AddChildren(self, node):
-        """Expands the node and adds children, actions and priors."""
-        l = len(node.LegalActions)
-        node.Children = [None] * l
-        for i in range(l):
-            if node.LegalActions[i] == 1:
-                s = self.ApplyAction(node.State, i)
-                node.Children[i] = Node(
-                    s, self.LegalActions(s), self.GetPriors(s))
-                node.Children[i].Parent = node
-        return
-
-    def MoveRoot(self, states):
-        for s in states:
-            self._moveRoot(s)
-        return
+            self._backProp(leaf.Parent, stateValue, playerForValue)
 
     def _moveRoot(self, state):
+        """ Updates the root of the tree.
+
+            Move the root of the tree to the provided state. Use this to update
+            the root so that tree integrity can be maintained between moves if
+            necessary. Does nothing if Root is None, for example after running
+            DropRoot().
+
+            Args:
+                state: A GameState object which self.Root should be updated to.
+        """
         if self.Root is None:
             return
         if self.Root.Children is None:
@@ -173,51 +273,117 @@ class MCTS:
             if child.State == state:
                 self.Root = child
                 break
-        return
 
-    def ResetRoot(self):
-        if self.Root is None:
-            return
-        while self.Root.Parent is not None:
-            self.Root = self.Root.Parent
-        return
+    def _runMCTS(self, temp, endTime=None, nPlays=None):
+        """ Run the MCTS algorithm on the current Root Node.
 
-    def DropRoot(self):
-        self.Root = None
-        return
+            Given the current game state, represented by self.Root, a child node
+            is seleted using the _findLeaf method. This method will apply temp to
+            all child node move selection proportions, compute the sampled value
+            of the action, and backpropogate the value through the tree.
 
-    def BackProp(self, leaf, stateValue, playerForValue):
-        leaf.Plays += 1
-        if leaf.Parent is not None:
-            if leaf.Parent.State.Player == playerForValue:
-                leaf.Value += stateValue
-            else:
-                leaf.Value += 1 - stateValue
+            Args:
+                temp: A float determining the temperature to apply in FindMove.
+                endTime: (optional) The maximum time to spend on searching.
+                nPlays: (optional) The maximum number of positions to evaluate.
+        """
+        endPlays = self.Root.Plays + (nPlays if nPlays is not None else 0)
+        while ((endTime is None or (time() < endTime or self.Root.Children is None))
+                and (nPlays is None or self.Root.Plays < endPlays)):
+            node = self._findLeaf(self.Root, temp)
 
-            self.BackProp(leaf.Parent, stateValue, playerForValue)
-        return
+            val = self.SampleValue(node.State, node.State.PreviousPlayer)
+            self._backProp(node, val, node.State.PreviousPlayer)
 
-    '''Algorithm implementation functions'''
+    def _selectAction(self, root, temp, exploring=True):
+        """ Chooses an action from an explored root.
 
-    def RunSimulation(self, root):
-        raise NotImplementedError
+            Selects a child of the root using an upper confidence interval. If
+            you are not exploring, setting the exploring flag to false will
+            instead choose the one with the highest expected payout - ignoring 
+            the exploration/regret factor.
 
-    def SampleValue(self, state, player):
-        raise NotImplementedError
+            Args:
+                root: A Node object which must have children Nodes.
+                temp: The temperature to apply to the children Node visit
+                    counts. If temp is 0, _selectAction will return the child
+                    Node with the greatest visit count.
+                exploring: A boolean toggle for overriding the selection type to
+                    a simple argmax.  If True, _selectAction will return the
+                    child Node with the greatest visit count.
+
+            Returns:
+                choice: An int representing the index of the selected action.
+        """
+        assert root.Children is not None, 'The node has children to select.'
+
+        if not exploring or temp == 0:
+            allPlays = sum(root.ChildPlays())
+            explorationFactor = 1 if exploring else 0
+            upperConfidence = (root.ChildWinRates()
+                               + (explorationFactor * self.ExplorationRate *
+                                  root.Priors * np.sqrt(1.0 + allPlays))
+                               / (1.0 + root.ChildPlays()))
+            choice = np.argmax(upperConfidence)
+            p = None
+        else:
+            allPlays = sum([p ** (1 / temp) for p in root.ChildPlays()])
+            p = [c ** (1 / temp) / allPlays for c in root.ChildPlays()]
+            choice = np.random.choice(len(root.ChildPlays()), p=p)
+
+        assert root.LegalActions[choice] == 1, 'Selected move is legal.'
+        return choice
+
+    '''Functions to override'''
 
     def GetPriors(self, state):
+        """ Gets the array of prior search probabilities.
+
+            This is the default GetPriors for MCTS. The return value is always
+            an array of ones. This should be overridden to get actual utility.
+
+            Args:
+                state: A GameState object to get the priors of.
+
+            Returns:
+                A numpy array of ones of shape [num_legal_actions_of_state].
+        """
+        return np.array([1] * len(state.LegalActions()))
+
+    def SampleValue(self, state, player):
+        """ Samples the value of a state for a specified player.
+
+            This applies a set of Monte Carlo random rollouts to a state until a
+            game terminates, and returns the determined evaluation.
+
+            Args:
+                state: A GameState object which the function will obtain the
+                    evaluation of.
+                player: An integer representing the current player in state.
+
+            Returns:
+                A float representing the value of the state. It is 0 if it was
+                    determined to be a loss, 1 if it was determined to be a win,
+                    and 0.5 if it was determined to be a draw.
+        """
+        rolloutState = state
+        winner = rolloutState.Winner()
+        while winner is None:
+            actions = np.where(rolloutState.LegalActions() == 1)[0]
+            action = np.random.choice(actions)
+            rolloutState = self._applyAction(rolloutState, action)
+            winner = rolloutState.Winner(action)
+        return 0.5 if winner == 0 else int(player == winner)
+
+    def _findLeaf(self, node, temp):
+        """ Applies MCTS to a supplied node until a leaf is found.
+
+            Args:
+                node: A Node object to find a leaf of.
+        """
         raise NotImplementedError
 
-    '''Game implementation functions.'''
-
-    def ApplyAction(self, state, action):
-        raise NotImplementedError
-
-    def LegalActions(self, state):
-        raise NotImplementedError
-
-    def Winner(self, state, lastAction=None):
-        raise NotImplementedError
+    '''Overriden from Object'''
 
     def __getstate__(self):
         self_dict = self.__dict__.copy()

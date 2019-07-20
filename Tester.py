@@ -13,12 +13,12 @@ def playGame(ai, playHuman = False, timePerMove = None, playsPerMove = None):
         print('{0}'.format(ai.Root.ChildWinRates()))
         print('Number of simulations: {0}'.format(ai.Root.Plays))
         print()
-        ai.MoveRoot([board])
+        ai.MoveRoot(board)
         if playHuman:
             col = int(input('Select a column: '))
             board = ai.ApplyAction(board,col)
             print()
-            ai.MoveRoot([board])
+            ai.MoveRoot(board)
 
     return
 
@@ -33,6 +33,6 @@ def addRootDist(root, plays):
 
 if __name__=='__main__':
     np.set_printoptions(formatter={'float_kind': lambda x : "%.1f" % x})
-    ai = AI(10, 1, threads = 1)
+    ai = AI(10, 1)
     playGame(ai, True, None, 100)
 

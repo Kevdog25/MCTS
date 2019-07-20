@@ -1,84 +1,155 @@
+from FixedMCTS import FixedMCTS
+from DynamicMCTS import DynamicMCTS
+from GameState import GameState
+
+import json
 import numpy as np
-import random
 
-class Connect4:
-    def __init__(self, **kwargs):
-        self.Width = kwargs['width'] if ('width' in kwargs) else 5
-        self.Height = kwargs['height'] if 'height' in kwargs else 4
-        self.InARow = kwargs['inARow'] if 'inARow' in kwargs else 3
-        return
+class BoardState(GameState):
+    Players = {0: ' ', 1 : 'X', 2 : 'O'}
+    Width = 7
+    Height = 6
+    InARow = 4
+    Dirs = [(0,1),(1,1),(1,0),(1,-1)]
+    BoardShape = np.array([Width, Height], dtype=np.int8)
+    LegalMoves = Width
+    GameType = 'Connect4'
 
-    def next_states(self, currentState):
-        toMove = currentState[0]
-        board = currentState[1]
-        nextStates = []
-        for col in range(self.Width):
-            if board[0,col] != 0:
-                continue
-            for row in reversed(range(self.Height)):
-                if board[row,col] == 0:
-                    nextBoard = np.copy(board)
-                    nextBoard[row,col] = toMove
-                    nextStates.append((-toMove, nextBoard))
-                    break
+    def __init__(self):
+        self.Board = np.zeros((self.Height, self.Width, 2), dtype=np.int8)
+        self.Player = 1
+        self.PreviousPlayer = None
 
-        return nextStates
+    def Copy(self):
+        copy = BoardState()
+        copy.Player = self.Player
+        copy.Board = np.copy(self.Board)
+        return copy
 
-    def play(self, currentState, col):
-        toMove = currentState[0]
-        board = currentState[1]
-        for row in reversed(range(self.Height)):
-            if board[row,col] == 0:
-                nextBoard = np.copy(board)
-                nextBoard[row, col] = toMove
-                nextState = (-toMove, nextBoard)
+    def LegalActions(self):
+        actions = np.zeros(self.Width)
+        for j in range(self.Width):
+            if np.sum(self.Board[self.Height-1, j, :]) == 0:
+                actions[j] = 1
+
+        return actions
+
+    def LegalActionShape(self):
+        return np.array([self.Width], dtype=np.int8)
+
+    def ApplyAction(self, action):
+        if np.sum(self.Board[self.Height -1, action, :]) != 0:
+            raise ValueError('Tried to make an illegal move.')
+
+        top = -1
+        for i in reversed(range(self.Height)):
+            if np.sum(self.Board[i, action, :]) != 0:
+                top = i
                 break
-        return nextState
 
-    def isEnd(self, state):
-        dirs = [(0,1),(1,1),(1,0),(1,-1)] # lol. dirs are cols x rows, while we loop the other way.
-        board = state[1]
-        winner = 0
-        countZeros = 0
-        for i in range(self.Height):
-            for j in range(self.Width):
-                if board[i,j] == 0:
-                    countZeros += 1
-                    continue
-                p = board[i,j]
-                for dir in dirs:
-                    inARow = 0
-                    r = 0
-                    while r*dir[0] + j < self.Width and r*dir[1] + i < self.Height and r*dir[1] + i >= 0 and board[r*dir[1] + i, r*dir[0] + j] == p:
-                        inARow += 1
-                        r += 1
-                    r = -1
-                    while r*dir[0] + j >= 0 and r*dir[1] + i < self.Height and r*dir[1] + i >= 0 and board[r*dir[1] + i, r*dir[0] + j] == p:
-                        inARow += 1
-                        r -= 1
-                    if inARow >= self.InARow:
-                        return (1, p)
-        if countZeros == 0:
-            return (1, 0)
-        return (0, 0)
+        self.Board[top + 1, action, self.Player - 1] = 1
+        self.PreviousPlayer = self.Player
+        self.Player = 1 if self.Player == 2 else 2
 
-    def eval(self,state):
-        return random.uniform(-0.5,0.5)
+    def AsInputArray(self):
+        player = np.full((self.Height, self.Width), 1 if self.Player == 1 else -1)
+        array = np.zeros((1, self.Height, self.Width, 3), dtype=np.int8)
+        array[0, :, :, 0:2] = self.Board
+        array[0, :, :, 2] = player
+        return array
 
-    def asHashable(self,state):
-        return ''.join([str(v) for v in state[1].flatten()])
+    def Winner(self, prevAction=None):
+        board = self._collapsed()
 
-    def newGame(self):
-        return (1, np.zeros((self.Height,self.Width),dtype = np.int32))
+        if prevAction is not None:
+            for i in reversed(range(self.Height)):
+                if np.sum(self.Board[i, prevAction, :]) != 0:
+                    break
+            win = self._checkVictory(board, i, prevAction)
+            if win is not None: 
+                return win
+        else:
+            for i in range(self.Height):
+                for j in range(self.Width):
+                    if board[i,j] == 0:
+                        continue
+                    win = self._checkVictory(board, i, j)
+                    if win is not None: 
+                        return win
 
+        if self._isOver(board):
+            return 0
+        return None
 
+    def EvalToString(self, eval):
+        return str(eval)
 
+    def _isOver(self, board):
+        for j in range(self.Width):
+            if np.sum(self.Board[self.Height-1, j, :]) == 0:
+                return False
+        return True
 
-if __name__=='__main__':
-    game = Connect4()
-    board = np.zeros((game.Height,game.Width),np.int32)
-    nextState = (1, board)
-    while not game.isEnd(nextState)[0]:
-       nextState = random.choice(game.next_states(nextState))
-    print(nextState[1])
-    print(game.isEnd(nextState))
+    def _checkVictory(self, board, i, j):
+        p = board[i,j]
+        for dir in self.Dirs:
+            inARow = 0
+            r = 0
+            while r*dir[0] + i < self.Height and r*dir[1] + j < self.Width and r*dir[1] + j >= 0 and board[r*dir[0] + i, r*dir[1] + j] == p:
+                inARow += 1
+                r += 1
+            r = -1
+            while r*dir[0] + i >= 0 and r*dir[1] + j < self.Width and r*dir[1] + j >= 0 and board[r*dir[0] + i, r*dir[1] + j] == p:
+                inARow += 1
+                r -= 1
+            if inARow >= self.InARow:
+                return p
+        return None
+
+    def _collapsed(self):
+        array = np.zeros(self.Board.shape[:2])
+        for p in BoardState.Players:
+            array[self.Board[:, :, p - 1] == 1] = p
+        return array
+
+    def __str__(self):
+        array = self._collapsed()
+        s = ''
+        for i in reversed(range(array.shape[0])):
+            s += '[ '
+            for j in range(array.shape[1]):
+                s += ' {} '.format(BoardState.Players[array[i, j]])
+                if j < array.shape[1] - 1:
+                    s += '|'
+            s += ']\n'
+
+        return s
+
+    def __eq__(self, other):
+        if other.Player != self.Player:
+            return False
+        return (other.Board == self.Board).all()
+
+    def __hash__(self):
+        return "{0}{1}".format(self.Player,str(self)).__hash__()
+
+if __name__ == '__main__':
+    params = {'maxDepth' : 10, 'explorationRate' : 1, 'playLimit' : 100}
+    player = FixedMCTS(**params)
+    BoardState.Width = 7
+    BoardState.Height = 6
+    BoardState.InARow = 4
+
+    state = BoardState()
+    while state.Winner() is None:
+        print(state)
+        print('To move: {}'.format(state.Player))
+        state, v, p = player.FindMove(state,0)
+        print('Value: {}'.format(v))
+        print('Selection Probabilities: {}'.format(p))
+        print('Child Values: {}'.format(player.Root.ChildWinRates()))
+        print('Child Exploration Rates: {}'.format(player.Root.ChildPlays()))
+        print()
+        player.MoveRoot(state)
+    print(state)
+    print(state.Winner())
