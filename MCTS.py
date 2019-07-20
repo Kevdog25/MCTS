@@ -1,7 +1,6 @@
 import numpy as np
 from time import time
-import multiprocessing as mp
-from GameState import GameState
+from .GameState import GameState
 
 
 class Node(object):

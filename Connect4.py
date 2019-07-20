@@ -1,6 +1,6 @@
-from FixedMCTS import FixedMCTS
-from DynamicMCTS import DynamicMCTS
-from GameState import GameState
+from .FixedMCTS import FixedMCTS
+from .DynamicMCTS import DynamicMCTS
+from .GameState import GameState
 
 import json
 import numpy as np

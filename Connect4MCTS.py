@@ -1,4 +1,4 @@
-from FixedMCTS import FixedMCTS as MCTS_base
+from .FixedMCTS import FixedMCTS as MCTS_base
 import numpy as np
 
 class BoardState():

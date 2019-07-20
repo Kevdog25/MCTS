@@ -1,4 +1,4 @@
-from FixedMCTS import FixedMCTS as MCTS
+from .FixedMCTS import FixedMCTS as MCTS
 import numpy as np
 
 
